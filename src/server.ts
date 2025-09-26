@@ -1,7 +1,10 @@
-import express, { Request, Response } from "express";
+import express from "express";
+import type { Request, Response } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
+import swaggerUi from "swagger-ui-express";
+import swaggerJsdoc from "swagger-jsdoc";
 
 const server = new McpServer({
   name: "mcp-streamable-http",
@@ -13,16 +16,39 @@ const getChuckJoke = server.tool(
   "get-chuck-joke",
   "Get a random Chuck Norris joke",
   async () => {
-    const response = await fetch("https://api.chucknorris.io/jokes/random");
-    const data = await response.json();
-    return {
-      content: [
-        {
-          type: "text",
-          text: data.value,
-        },
-      ],
-    };
+    try {
+      const response = await fetch("https://api.chucknorris.io/jokes/random");
+      if (!response.ok) {
+        console.error("Failed to fetch joke:", response.statusText);
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Failed to fetch joke.",
+            },
+          ],
+        };
+      }
+      const data = await response.json();
+      return {
+        content: [
+          {
+            type: "text",
+            text: data.value || "No joke found.",
+          },
+        ],
+      };
+    } catch (error) {
+      console.error("Error fetching joke:", error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Error fetching joke.",
+          },
+        ],
+      };
+    }
   }
 );
 
@@ -96,11 +122,33 @@ const transport: StreamableHTTPServerTransport =
   new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined, // set to undefined for stateless servers
   });
-
+const PORT = process.env.PORT || 3001;
 // Setup routes for the server
 const setupServer = async () => {
   await server.connect(transport);
 };
+const swaggerOptions = {
+  definition: {
+    openapi: "3.0.0",
+    info: {
+      title: "MCP Jokes API",
+      version: "1.0.0",
+      description: "API for Chuck Norris and Dad jokes",
+    },
+    servers: [
+      {
+        url: `http://localhost:${PORT}`,
+      },
+    ],
+  },
+  apis: ["./src/server.ts"], // Path to your API docs
+};
+
+const swaggerSpec = swaggerJsdoc(swaggerOptions);
+
+// Serve Swagger UI at /api-docs
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
 
 app.post("/mcp", async (req: Request, res: Response) => {
   console.log("Received MCP request:", req.body);
@@ -150,7 +198,7 @@ app.delete("/mcp", async (req: Request, res: Response) => {
 });
 
 // Start the server
-const PORT = process.env.PORT || 3000;
+
 setupServer()
   .then(() => {
     app.listen(PORT, () => {
